@@ -30,9 +30,16 @@
                 <h2 class="text-2xl font-semibold mb-6 text-blue-700">1. Log Meal & Symptoms</h2>
                 
                 <!-- Food Selection -->
-                <div class="mb-5">
-                    <label for="food-select" class="block text-sm font-medium text-gray-700 mb-2">Food Consumed:</label>
-                    <select id="food-select" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150 ease-in-out bg-white"></select>
+                <div class="mb-5 relative">
+                    <label for="food-input" class="block text-sm font-medium text-gray-700 mb-2">Food Consumed:</label>
+                    <input 
+                        type="text" 
+                        id="food-input" 
+                        placeholder="Start typing to search or add new food..." 
+                        autocomplete="off"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150 ease-in-out"
+                    />
+                    <div id="food-suggestions" class="absolute z-10 w-full bg-white border border-gray-300 rounded-lg shadow-lg mt-1 max-h-60 overflow-y-auto hidden"></div>
                 </div>
                 
                 <!-- Symptom Checkboxes -->
@@ -121,7 +128,8 @@
         const ADD_NEW_FOOD_OPTION = 'add_new_food_option';
 
         // --- DOM ELEMENTS ---
-        const foodSelect = document.getElementById('food-select');
+        const foodInput = document.getElementById('food-input');
+        const foodSuggestions = document.getElementById('food-suggestions');
         const symptomsList = document.getElementById('symptoms-list');
         const logButton = document.getElementById('log-button');
         const logContainer = document.getElementById('log-container');
@@ -223,29 +231,53 @@
 
         // --- RENDERING FUNCTIONS ---
 
-        function renderFoodDropdown(foods) {
-            // Clear existing options
-            foodSelect.innerHTML = ''; 
+        let allFoods = [];
 
-            if (foods.length === 0) {
-                 const defaultOption = document.createElement('option');
-                 defaultOption.textContent = "No foods yet. Add one below.";
-                 defaultOption.value = "";
-                 foodSelect.appendChild(defaultOption);
-            } else {
-                foods.forEach(food => {
-                    const option = document.createElement('option');
-                    option.value = food.name;
-                    option.textContent = food.name;
-                    foodSelect.appendChild(option);
-                });
+        function renderFoodDropdown(foods) {
+            allFoods = foods;
+            // Food list is now stored globally for autocomplete filtering
+        }
+
+        function filterAndShowSuggestions(searchText) {
+            const text = searchText.toLowerCase().trim();
+            
+            if (text.length === 0) {
+                foodSuggestions.classList.add('hidden');
+                return;
             }
 
-            // Always add the 'Add New' option last
-            const addNewOption = document.createElement('option');
-            addNewOption.value = ADD_NEW_FOOD_OPTION;
-            addNewOption.textContent = "+ Add New Food...";
-            foodSelect.appendChild(addNewOption);
+            const filtered = allFoods.filter(food => 
+                food.name.toLowerCase().includes(text)
+            );
+
+            foodSuggestions.innerHTML = '';
+
+            // Show matching foods
+            filtered.forEach(food => {
+                const div = document.createElement('div');
+                div.className = 'p-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100';
+                div.textContent = food.name;
+                div.onclick = () => selectFood(food.name);
+                foodSuggestions.appendChild(div);
+            });
+
+            // Always show "Add new" option
+            const addNewDiv = document.createElement('div');
+            addNewDiv.className = 'p-3 hover:bg-green-50 cursor-pointer text-green-600 font-medium';
+            addNewDiv.textContent = `+ Add "${searchText}" as new food`;
+            addNewDiv.onclick = () => {
+                newFoodInput.value = searchText;
+                openModal();
+                foodSuggestions.classList.add('hidden');
+            };
+            foodSuggestions.appendChild(addNewDiv);
+
+            foodSuggestions.classList.remove('hidden');
+        }
+
+        function selectFood(foodName) {
+            foodInput.value = foodName;
+            foodSuggestions.classList.add('hidden');
         }
 
         function renderSymptomsCheckboxes() {
@@ -372,12 +404,6 @@
 
         // --- EVENT HANDLERS ---
 
-        function handleFoodSelectChange(event) {
-            if (event.target.value === ADD_NEW_FOOD_OPTION) {
-                openModal();
-            }
-        }
-
         async function saveNewFood() {
             const foodName = newFoodInput.value.trim();
             if (!foodName) return;
@@ -413,18 +439,17 @@
                 });
                 
                 closeModal();
-                foodSelect.value = foodName; // Select the newly added food
+                foodInput.value = foodName; // Select the newly added food
+                foodInput.focus();
             } catch (e) {
                 console.error("Error adding document: ", e);
             }
         }
 
         async function logEntry() {
-            const selectedFood = foodSelect.value;
-            if (!selectedFood || selectedFood === ADD_NEW_FOOD_OPTION) {
-                // IMPORTANT: Since we moved away from alert(), we need a non-alert message system.
-                // For simplicity here, we'll just log an error to the console and briefly change the button text.
-                logButton.textContent = 'Please select a food!';
+            const selectedFood = foodInput.value.trim();
+            if (!selectedFood) {
+                logButton.textContent = 'Please enter a food!';
                 logButton.classList.remove('bg-blue-500', 'hover:bg-blue-600');
                 logButton.classList.add('bg-red-500');
                  setTimeout(() => {
@@ -433,6 +458,16 @@
                     logButton.classList.add('bg-blue-500', 'hover:bg-blue-600');
                 }, 1500);
                 return;
+            }
+
+            // If food doesn't exist, add it first
+            if (!allFoods.some(f => f.name.toLowerCase() === selectedFood.toLowerCase())) {
+                const paths = getUserPaths(userId);
+                const docRef = doc(paths.foods, selectedFood.toLowerCase().replace(/\s/g, '_'));
+                await setDoc(docRef, { 
+                    name: selectedFood, 
+                    timestamp: new Date() 
+                });
             }
 
             const checkedSymptoms = Array.from(document.querySelectorAll('input[name="symptom"]:checked'))
@@ -457,7 +492,8 @@
                 logButton.classList.remove('bg-blue-500', 'hover:bg-blue-600');
                 logButton.classList.add('bg-green-500');
                 
-                // Clear symptoms checkboxes
+                // Clear input and symptoms checkboxes
+                foodInput.value = '';
                 document.querySelectorAll('input[name="symptom"]:checked').forEach(cb => cb.checked = false);
 
                 setTimeout(() => {
@@ -481,7 +517,15 @@
             initializeFirebase(); 
             
             // Event Listeners
-            foodSelect.addEventListener('change', handleFoodSelectChange);
+            foodInput.addEventListener('input', (e) => filterAndShowSuggestions(e.target.value));
+            foodInput.addEventListener('focus', (e) => {
+                if (e.target.value) filterAndShowSuggestions(e.target.value);
+            });
+            document.addEventListener('click', (e) => {
+                if (!foodInput.contains(e.target) && !foodSuggestions.contains(e.target)) {
+                    foodSuggestions.classList.add('hidden');
+                }
+            });
             logButton.addEventListener('click', logEntry);
             saveNewFoodButton.addEventListener('click', saveNewFood);
             
