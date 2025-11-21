@@ -1,0 +1,19 @@
+# Firebase Configuration (contains sensitive API keys)
+firebase-config.js
+
+# Local Netlify folder
+.netlify
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
